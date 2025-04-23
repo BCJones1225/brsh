@@ -1,3 +1,6 @@
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = [ 'cfg(test)' ] }
+
 [package]
 name = "brsh"
 version = "0.1.0"
