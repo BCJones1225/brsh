@@ -4,6 +4,8 @@ unexpected_cfgs = { level = "warn", check-cfg = [ 'cfg(test)' ] }
 [package]
 name = "brsh"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
+miette = { version = "7.6.0", features = ["fancy"] }
+thiserror = "2.0.12"
