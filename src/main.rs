@@ -1,3 +1,5 @@
+mod byte_chars;
+
 use std::io::{Read, stdin};
 
 use lexer::lex;
@@ -16,27 +18,24 @@ fn main() -> miette::Result<()> {
 }
 
 mod lexer {
+
     use miette::{Diagnostic, NamedSource, SourceSpan};
+
+    use crate::byte_chars::ByteChars;
 
     pub fn lex(input: &str) -> 
     impl Iterator<
         Item = miette::Result<Token>
     > {
-        let mut chars = input.chars();
-        let mut character = 0;
+        let mut chars = ByteChars::new(input);
 
         let mut ret = Vec::new();
 
-        let mut cho = chars.next();        
-        character += 1;
-
-        while let Some(ch) = cho {
-            dbg!((&ch, &character));
+        while let Some(ch) = chars.next() {
             let tok = match ch {
                 '0'..='9' => Ok(
                     int(
                         &mut chars, 
-                        &mut character, 
                         ch
                     )
                 ),
@@ -45,7 +44,7 @@ mod lexer {
                     src: NamedSource::new(
                         "stdin", 
                         input.to_owned()), 
-                    bad_bit: (character - 1, 1).into()
+                    bad_bit: (chars.bytes() - 1 , 1).into()
                 }.into())
             };
 
@@ -56,9 +55,6 @@ mod lexer {
             if is_err {
                 break;
             }
-
-            cho = chars.next();
-            character += 1;
         }
 
         ret.into_iter()
@@ -66,22 +62,15 @@ mod lexer {
 
     fn int(
         chars: &mut dyn Iterator<Item = char>,
-        character: &mut usize,
         first_digit: char,
     ) -> Token {
         let mut ret = String::from(first_digit);
 
-        let mut cho = chars.next();
-        *character += 1;
-
-        while let Some(ch) = cho {
+        while let Some(ch) = chars.next() {
             match ch {
                 '0'..='9' => ret.push(ch),
                 _ => break
             }
-
-            cho = chars.next();
-            *character += 1;
         }
 
         Token::Int(ret)
