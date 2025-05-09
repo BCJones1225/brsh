@@ -2,44 +2,63 @@ use std::io::{Read, stdin};
 
 use lexer::lex;
 
-fn main() {
+fn main() -> miette::Result<()> {
     let mut buffer = String::new();
-    stdin().read_to_string(&mut buffer).expect("Invalid UTF8!");
+    stdin().read_to_string(&mut buffer)
+        .expect("Invalid UTF8!");
     // TODO: miette error here
 
     for token in lex(&buffer) {
-        println!("{:?}", token);
+        println!("{:?}", token?);
     }
+
+    Ok(())
 }
 
 mod lexer {
-    pub fn lex(
-        input: &str,
-    ) -> impl Iterator<Item = Result<Token, LexingError>> {
-let mut chars = input.chars();
-        let mut line = 1;
-        let mut character = 1;
+    use miette::{Diagnostic, NamedSource, SourceSpan};
+
+    pub fn lex(input: &str) -> 
+    impl Iterator<
+        Item = miette::Result<Token>
+    > {
+        let mut chars = input.chars();
+        let mut character = 0;
 
         let mut ret = Vec::new();
 
-        while let Some(ch) = chars.next() {
+        let mut cho = chars.next();        
+        character += 1;
+
+        while let Some(ch) = cho {
+            dbg!((&ch, &character));
             let tok = match ch {
-                '0'..='9' => Ok(int(&mut chars, &mut line, &mut character, ch)),
-                _ => Err(LexingError::from(format!(
-                    "\
-                        Unexpected character: \"{ch}\". \
-                        Line: {line}, character: {character}.\
-                    "
-                ))),
+                '0'..='9' => Ok(
+                    int(
+                        &mut chars, 
+                        &mut character, 
+                        ch
+                    )
+                ),
+                _ => Err(UnexpectedCharacter {
+                    // TODO:not convert input to String?
+                    src: NamedSource::new(
+                        "stdin", 
+                        input.to_owned()), 
+                    bad_bit: (character - 1, 1).into()
+                }.into())
             };
 
-            let is_err = if let Err(_) = &tok { true } else { false };
+            let is_err = tok.is_err();
 
             ret.push(tok);
 
             if is_err {
                 break;
             }
+
+            cho = chars.next();
+            character += 1;
         }
 
         ret.into_iter()
@@ -47,26 +66,21 @@ let mut chars = input.chars();
 
     fn int(
         chars: &mut dyn Iterator<Item = char>,
-        line: &mut usize,
         character: &mut usize,
         first_digit: char,
     ) -> Token {
-        *character += 1;
         let mut ret = String::from(first_digit);
 
-        while let Some(ch) = chars.next() {
+        let mut cho = chars.next();
+        *character += 1;
+
+        while let Some(ch) = cho {
             match ch {
                 '0'..='9' => ret.push(ch),
-                _ => { 
-                    if ch == '\n' {
-                        *line += 1;
-                        *character = 1;
-                    } else {
-                        *character += 1;
-                    }
-                    break;
-                }
+                _ => break
             }
+
+            cho = chars.next();
             *character += 1;
         }
 
@@ -78,22 +92,14 @@ let mut chars = input.chars();
         Int(String),
     }
 
-    #[derive(Debug, PartialEq)]
-    pub struct LexingError {
-        message: String,
-    }
+    #[derive(thiserror::Error, Debug, Diagnostic, PartialEq)]
+    #[error("Unexpected character")]
+    pub struct UnexpectedCharacter {
+        #[source_code]
+        src: NamedSource<String>,
 
-    impl From<&str> for LexingError {
-        fn from(value: &str) -> Self {
-            Self {
-                message: value.to_owned(),
-            }
-        }
-    }
-    impl From<String> for LexingError {
-        fn from(value: String) -> Self {
-            Self { message: value }
-        }
+        #[label("This character")]
+        bad_bit: SourceSpan
     }
 
     #[cfg(test)]
@@ -102,45 +108,76 @@ let mut chars = input.chars();
 
         #[test]
         fn lex_int() {
-            assert_eq!(to_vec("32"), [Token::int("32")]);
-            assert_eq!(to_vec("5"), [Token::int("5")]);
+            assert_eq!(
+                to_vec("32"), 
+                [Token::int("32")]
+            );
+            assert_eq!(
+                to_vec("5"), 
+                [Token::int("5")]
+            );
         }
 
         #[test]
         fn lex_multiple_tokens() {
-            assert_eq!(to_vec("33 6"), [Token::int("33"), Token::int("6")]);
-            assert_eq!(to_vec("7 16"), [Token::int("7"), Token::int("16")]);
+            assert_eq!(
+                to_vec("33 6"), 
+                [
+                    Token::int("33"), 
+                    Token::int("6")
+                ]
+            );
+            assert_eq!(
+                to_vec("7 16"), 
+                [
+                    Token::int("7"), 
+                    Token::int("16")
+                ]
+            );
         }
 
         #[test]
         fn lexing_invalid_is_error() {
-            let tokens: Vec<_> = lex("3\n4\n87 'sd").collect();
+            miette::set_hook(Box::new(|_| {
+                Box::new(
+                    miette::MietteHandlerOpts::new()
+                        .color(false)
+                        .build()
+                )
+            }))
+                .unwrap();
+
+            let token = lex("`")
+                .next()
+                .unwrap()
+                .unwrap_err();
             assert_eq!(
-                tokens,
-                &[
-                    Ok(Token::int("3")),
-                    Ok(Token::int("4")),
-                    Ok(Token::int("87")),
-                    Err(LexingError::from(
-                        "\
-                            Unexpected character: \"'\". \
-                            Line: 3, character: 4.\
-                        "
-                    ))
-                ]
+                format!("{token:?}"), 
+                "  \
+                     × Unexpected character\n   \
+                      ╭─[stdin:1:1]\n \
+                    1 │ `\n   \
+                      · ┬\n   \
+                      · ╰── This character\n   \
+                      ╰────\n\
+                "
             );
 
-            let tokens: Vec<_> = lex("`sd").collect();
+            let token = lex("3\n4\n87 'sd")
+                .nth(3)
+                .unwrap()
+                .unwrap_err();
             assert_eq!(
-                tokens,
-                &[
-                    Err(LexingError::from(
-                        "\
-                            Unexpected character: \"`\". \
-                            Line: 1, character: 1.\
-                        "
-                    ))
-                ]
+                format!("{token:?}"), 
+                "  \
+                     × Unexpected character\n   \
+                      ╭─[stdin:3:4]\n \
+                    2 │ 4\n \
+                    3 │ 87 'sd\n   \
+                      ·    ┬\n   \
+                      ·    ╰── This character\n   \
+                      ╰────\n\
+                "
             );
         }
 
@@ -153,7 +190,8 @@ let mut chars = input.chars();
         /// Lex the supplied str, collect into a Vec, and panic if any of the
         /// tokens causes an error.
         fn to_vec(input: &str) -> Vec<Token> {
-            let ret: Result<Vec<Token>, LexingError> = lex(input).collect();
+            let ret: miette::Result<Vec<Token>> =
+                lex(input).collect();
             ret.expect("Lexing failed")
         }
     }
