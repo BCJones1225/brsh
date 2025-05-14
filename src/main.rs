@@ -23,57 +23,75 @@ mod lexer {
 
     use crate::byte_chars::ByteChars;
 
-    pub fn lex(input: &str) -> 
-    impl Iterator<
-        Item = miette::Result<Token>
-    > {
-        let mut chars = ByteChars::new(input);
-
-        let mut ret = Vec::new();
-
-        while let Some(ch) = chars.next() {
-            let tok = match ch {
-                '0'..='9' => Ok(
-                    int(
-                        &mut chars, 
-                        ch
-                    )
-                ),
-                _ => Err(UnexpectedCharacter {
-                    // TODO:not convert input to String?
-                    src: NamedSource::new(
-                        "stdin", 
-                        input.to_owned()), 
-                    bad_bit: (chars.bytes() - 1 , 1).into()
-                }.into())
-            };
-
-            let is_err = tok.is_err();
-
-            ret.push(tok);
-
-            if is_err {
-                break;
-            }
-        }
-
-        ret.into_iter()
+    pub fn lex<'a>(input: &'a str) -> Lex<'a> {
+        Lex::new(input)
     }
 
-    fn int(
-        chars: &mut dyn Iterator<Item = char>,
-        first_digit: char,
-    ) -> Token {
-        let mut ret = String::from(first_digit);
+    pub struct Lex<'a> {
+        input: &'a str,
+        chars: ByteChars<'a>,
+        hit_error: bool
+    }
 
-        while let Some(ch) = chars.next() {
-            match ch {
-                '0'..='9' => ret.push(ch),
-                _ => break
+    impl<'a> Lex<'a> {
+        fn new(input: &'a str) -> Self {
+            Self { 
+                input,
+                chars: ByteChars::new(input),
+                hit_error: false
             }
         }
 
-        Token::Int(ret)
+        fn lex_next(&mut self) -> Option<miette::Result<Token>> {
+            if self.hit_error {
+                return None;
+            }
+
+            if let Some(ch) = self.chars.next() {
+                let tok = match ch {
+                    '0'..='9' => Ok(
+                        self.int(ch)
+                    ),
+                    _ => Err(UnexpectedCharacter {
+                        // TODO:not convert input to String?
+                        src: NamedSource::new(
+                            "stdin", 
+                            self.input.to_owned()), 
+                        bad_bit: (self.chars.bytes() - 1 , 1).into()
+                    }.into())
+                };
+
+                if tok.is_err() { self.hit_error = true; } 
+
+                Some(tok)
+            } else {
+                None
+            }
+        }
+
+        fn int(
+            &mut self,
+            first_digit: char,
+        ) -> Token {
+            let mut ret = String::from(first_digit);
+
+            while let Some(ch) = self.chars.next() {
+                match ch {
+                    '0'..='9' => ret.push(ch),
+                    _ => break
+                }
+            }
+
+            Token::Int(ret)
+        }
+    }
+
+    impl<'a> Iterator for Lex<'a> {
+        type Item = miette::Result<Token>;
+
+        fn next(&mut self) -> Option<Self::Item> {
+            self.lex_next()
+        }
     }
 
     #[derive(Debug, PartialEq)]
@@ -123,6 +141,14 @@ mod lexer {
                     Token::int("16")
                 ]
             );
+        }
+
+        #[test]
+        fn stop_producing_tokens_when_is_error() {
+            assert_eq!(
+                lex("33 6 ' 5 5").count(), 3);
+            assert_eq!(
+                lex("7 16 52 ' 9 8").count(), 4);
         }
 
         #[test]
