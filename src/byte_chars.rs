@@ -4,14 +4,14 @@ use std::str::Chars;
 /// your byte position in the str.
 pub struct ByteChars<'a> {
     inner: Chars<'a>,
-    bytes: usize
+    bytes: usize,
 }
 
 impl<'a> ByteChars<'a> {
     pub fn new(inner: &'a str) -> Self {
         Self {
-            inner: inner.chars(), 
-            bytes: 0 
+            inner: inner.chars(),
+            bytes: 0,
         }
     }
 
@@ -38,20 +38,12 @@ mod test {
 
     #[test]
     fn empty_str_gives_empty_iter() {
-        assert_eq!(
-            ByteChars::new("")
-                .collect::<Vec<_>>(), 
-            &[]
-        )
+        assert_eq!(ByteChars::new("").collect::<Vec<_>>(), &[])
     }
 
     #[test]
     fn iterating_over_byte_chars_gives_all_chars() {
-        assert_eq!(
-            ByteChars::new("abc")
-                .collect::<Vec<_>>(), 
-            &['a', 'b', 'c']
-        )
+        assert_eq!(ByteChars::new("abc").collect::<Vec<_>>(), &['a', 'b', 'c'])
     }
 
     #[test]
