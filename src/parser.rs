@@ -21,11 +21,13 @@ where
     I: Iterator<Item = Token>,
 {
     fn parse_next(&mut self) -> Option<miette::Result<SyntaxTree>> {
-        self.input.next().map(|token| match token {
-            Token::Int(_) => self.leaf_or_opn(token),
-
+        let token = self.input.next()?;
+        Some(match LeafToken::try_from(token) {
+            Ok(leaf_token) => match leaf_token {
+                LeafToken::Int(_) => self.leaf_or_operation(leaf_token),
+            },
             // Anything else, we don't recognize yet.
-            _ => Err(UnexpectedToken {
+            Err(_) => Err(UnexpectedToken {
                 // TODO: src: NamedSource::new("stdin", self.input.to_owned()),
                 src: NamedSource::new("stdin", "todo".to_owned()),
                 // TODO: bad_bit: token.span.into()
@@ -35,46 +37,18 @@ where
         })
     }
 
-    fn leaf_or_opn(&mut self, token: Token) -> miette::Result<SyntaxTree> {
-        if let Some(opr) = self.input.next() {
-            match opr {
-                // e.g., 3 +
-                Token::Operator(_) => {
-                    if let Some(rhs) = self.input.next() {
-                        match rhs {
-                            // e.g., 3 + 3
-                            Token::Int(_) => Ok(SyntaxTree::Operation {
-                                operator: opr,
-                                left: Box::new(SyntaxTree::Leaf(token)),
-                                right: Box::new(SyntaxTree::Leaf(rhs)),
-                            }),
-
-                            // e.g., 3 + + is not valid.
-                            Token::Operator(_) => Err(UnexpectedToken {
-                                // TODO: src: NamedSource::new("stdin", self.input.to_owned()),
-                                src: NamedSource::new(
-                                    "stdin",
-                                    "todo".to_owned(),
-                                ),
-                                // TODO: bad_bit: token.span.into()
-                                bad_bit: (1, 1).into(),
-                            }
-                            .into()),
-                        }
-                    } else {
-                        // e.g., 3 + (EOF) is not valid syntax.
-                        Err(UnexpectedEof {
-                            // TODO: src: NamedSource::new("stdin", self.input.to_owned()),
-                            src: NamedSource::new("stdin", "todo".to_owned()),
-                            // TODO: bad_bit: token.span.into()
-                            bad_bit: (1, 1).into(),
-                        }
-                        .into())
-                    }
+    fn leaf_or_operation(
+        &mut self,
+        leaf_token: LeafToken,
+    ) -> miette::Result<SyntaxTree> {
+        if let Some(token) = self.input.next() {
+            match OperatorToken::try_from(token) {
+                Ok(operator_token) => {
+                    self.operation_right_operand(leaf_token, operator_token)
                 }
 
-                // 3 3 is not valid syntax.
-                Token::Int(_) => Err(UnexpectedToken {
+                // e.g., 3 3 is not valid.
+                Err(_) => Err(UnexpectedToken {
                     // TODO: src: NamedSource::new("stdin", self.input.to_owned()),
                     src: NamedSource::new("stdin", "todo".to_owned()),
                     // TODO: bad_bit: token.span.into()
@@ -83,7 +57,43 @@ where
                 .into()),
             }
         } else {
-            Ok(SyntaxTree::Leaf(token))
+            Ok(SyntaxTree::Leaf(leaf_token))
+        }
+    }
+
+    fn operation_right_operand(
+        &mut self,
+        left: LeafToken,
+        operator: OperatorToken,
+    ) -> miette::Result<SyntaxTree> {
+        if let Some(right) = self.input.next() {
+            let right_leaf = LeafToken::try_from(right);
+            match right_leaf {
+                // e.g., 3 + 3
+                Ok(right_leaf) => Ok(SyntaxTree::Operation {
+                    operator,
+                    left: Box::new(SyntaxTree::Leaf(left)),
+                    right: Box::new(SyntaxTree::Leaf(right_leaf)),
+                }),
+
+                // e.g., 3 + + is not valid.
+                Err(_) => Err(UnexpectedToken {
+                    // TODO: src: NamedSource::new("stdin", self.input.to_owned()),
+                    src: NamedSource::new("stdin", "todo".to_owned()),
+                    // TODO: bad_bit: token.span.into()
+                    bad_bit: (1, 1).into(),
+                }
+                .into()),
+            }
+        } else {
+            // e.g., 3 + (EOF) is not valid syntax.
+            Err(UnexpectedEof {
+                // TODO: src: NamedSource::new("stdin", self.input.to_owned()),
+                src: NamedSource::new("stdin", "todo".to_owned()),
+                // TODO: bad_bit: token.span.into()
+                bad_bit: (1, 1).into(),
+            }
+            .into())
         }
     }
 }
@@ -101,13 +111,63 @@ where
 
 #[derive(Debug, PartialEq)]
 pub enum SyntaxTree {
-    Leaf(Token),
+    Leaf(LeafToken),
     Operation {
-        operator: Token,
+        operator: OperatorToken,
         left: Box<SyntaxTree>,
         right: Box<SyntaxTree>,
     },
 }
+
+#[derive(Debug, PartialEq)]
+pub enum LeafToken {
+    Int(String),
+}
+
+impl LeafToken {
+    #[cfg(test)]
+    pub fn int(literal: &str) -> Self {
+        Self::Int(literal.to_owned())
+    }
+}
+
+impl TryFrom<Token> for LeafToken {
+    type Error = NotLeafToken;
+
+    fn try_from(value: Token) -> Result<Self, Self::Error> {
+        match value {
+            Token::Int(i) => Ok(Self::Int(i)),
+            Token::Operator(_) => Err(NotLeafToken),
+        }
+    }
+}
+
+pub struct NotLeafToken;
+
+#[derive(Debug, PartialEq)]
+pub enum OperatorToken {
+    Plus(String),
+}
+
+impl OperatorToken {
+    #[cfg(test)]
+    pub fn operation(literal: &str) -> Self {
+        Self::Plus(literal.to_owned())
+    }
+}
+
+impl TryFrom<Token> for OperatorToken {
+    type Error = NotOperatorToken;
+
+    fn try_from(value: Token) -> Result<Self, Self::Error> {
+        match value {
+            Token::Int(_) => Err(NotOperatorToken),
+            Token::Operator(literal) => Ok(OperatorToken::Plus(literal)),
+        }
+    }
+}
+
+pub struct NotOperatorToken;
 
 #[derive(thiserror::Error, Debug, Diagnostic, PartialEq)]
 #[error("Unexpected token")]
@@ -142,10 +202,7 @@ mod test {
 
     #[test]
     fn parsing_number_produces_leaf_expression() {
-        assert_eq!(
-            to_vec("51"),
-            &[SyntaxTree::Leaf(Token::Int("51".to_owned()))]
-        );
+        assert_eq!(to_vec("51"), &[SyntaxTree::Leaf(LeafToken::int("51"))]);
     }
 
     #[test]
@@ -153,9 +210,9 @@ mod test {
         assert_eq!(
             to_vec("82 + 1"),
             &[SyntaxTree::Operation {
-                operator: Token::opn("+"),
-                left: Box::new(SyntaxTree::Leaf(Token::int("82"))),
-                right: Box::new(SyntaxTree::Leaf(Token::int("1")))
+                operator: OperatorToken::operation("+"),
+                left: Box::new(SyntaxTree::Leaf(LeafToken::int("82"))),
+                right: Box::new(SyntaxTree::Leaf(LeafToken::int("1")))
             }]
         );
     }

@@ -1,8 +1,6 @@
-use core::panic;
-
 use miette::{Diagnostic, NamedSource, SourceSpan};
 
-use crate::{lexer::Token, parser::SyntaxTree};
+use crate::parser::{LeafToken, OperatorToken, SyntaxTree};
 
 pub fn eval<I>(input: I) -> Values<I>
 where
@@ -38,9 +36,9 @@ where
         }
     }
 
-    fn leaf(&mut self, leaf: Token) -> miette::Result<Value> {
+    fn leaf(&mut self, leaf: LeafToken) -> miette::Result<Value> {
         match leaf {
-            Token::Int(literal) => literal
+            LeafToken::Int(literal) => literal
                 .parse::<i32>()
                 .map_err(|_e| {
                     InvalidNumber {
@@ -52,15 +50,12 @@ where
                     .into()
                 })
                 .map(|num| -> Value { Value::I32(num) }),
-
-            // TODO: leaf should not hold a token.
-            Token::Operator(_) => todo!(),
         }
     }
 
     fn operation(
         &mut self,
-        operator: Token,
+        operator: OperatorToken,
         left: SyntaxTree,
         right: SyntaxTree,
     ) -> miette::Result<Value> {
@@ -69,19 +64,10 @@ where
 
         // TODO: operator should not be a token.
         match operator {
-            // Does not make sense.
-            Token::Int(_) => {
-                panic!("The operator should be a token of type Operator!")
-            }
-            Token::Operator(literal) => match literal.as_str() {
-                "+" => match (left, right) {
-                    (Value::I32(left), Value::I32(right)) => {
-                        Ok(Value::I32(left + right))
-                    }
-                },
-
-                // Somehow, we have an operator made from an unrecognized string.
-                _ => panic!("Unrecognized operator literal"),
+            OperatorToken::Plus(_) => match (left, right) {
+                (Value::I32(left), Value::I32(right)) => {
+                    Ok(Value::I32(left + right))
+                }
             },
         }
     }

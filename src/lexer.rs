@@ -85,11 +85,13 @@ pub enum Token {
 }
 
 impl Token {
+    #[cfg(test)]
     pub fn int(literal: &str) -> Self {
         Token::Int(literal.to_owned())
     }
 
-    pub fn opn(literal: &str) -> Self {
+    #[cfg(test)]
+    pub fn operation(literal: &str) -> Self {
         Token::Operator(literal.to_owned())
     }
 }
@@ -124,11 +126,11 @@ mod tests {
     fn lex_add_expr() {
         assert_eq!(
             to_vec("34 + 61"),
-            [Token::int("34"), Token::opn("+"), Token::int("61")]
+            [Token::int("34"), Token::operation("+"), Token::int("61")]
         );
         assert_eq!(
             to_vec("8 + 160"),
-            [Token::int("8"), Token::opn("+"), Token::int("160")]
+            [Token::int("8"), Token::operation("+"), Token::int("160")]
         );
     }
 
